@@ -45,16 +45,6 @@ Sep, Oct, Nov, Dec };
 enum class Day
 { Sun=0, Mon, Tue, Wed, Thu, Fri, Sat };
 
-// obsolete, Bill needs to inherit
-/*
-struct Bill
-{
-    double bill_amount = 0.0;
-	   int d;
-	   Month m;
-	   int y;
-};
-*/
 
 /*
 class Date
@@ -121,27 +111,32 @@ void Date::add_day()
 	}
 }
 
+Month addMonth(const Month& month);
+
 void Date::add_month()
 {
-	if(m == Month::Dec)
-	{
-		m = Month::Jan;
-		//do not change day
-		add_year(1);
-	}
-	else if(m == Month::Jan && d == 29 && !leapyear(y))
-	{
-	// looks like it wont be March 1st    
-		// enums might be the wrong choice
-		m = (Month)((int)m+1);
-		d = 28;
-	}
-	else
-	{
-		m = (Month)((int)m+1);
-	}
-	// double check
-	if(!is_valid(y,m,d)) throw Invalid{}; 
+    if(m == Month::Dec)
+    {
+        m = Month::Jan;
+        //do not change day
+        add_year(1);
+    }
+    else if(m == Month::Jan && d == 29 && !leapyear(y))
+    {
+        // looks like it wont be March 1st
+        // enums might be the wrong choice
+        //		m = (Month)((int)m+1);
+        addMonth(m);
+        d = 28;
+    }
+    else
+    {
+        addMonth(m);
+        //m = (Month)((int)m+1);
+    }
+    // double check
+    if(!is_valid(y,m,d)) throw Invalid{};
+    
 }
 
 void Date::add_year(int n)
@@ -155,10 +150,6 @@ void Date::add_year(int n)
 	y += n;
 }
 
-/*
-change / create a date -> is valid
-useful
-*/
 bool Date::is_valid(int y, Month m, int d)
 {
 // Julian / Gregorian    
@@ -195,7 +186,7 @@ bool Date::leapyear(int y)
 }
 
 //
-// operators
+// Date operators
 //
 
 ostream& operator<<(ostream& os, const Date&d)
@@ -212,7 +203,9 @@ bool operator==(Date d1, Date d2)
         && d1.month() == d2.month()
             && d1.day() == d2.day());
 }
+
 // end of Date class
+
 
 //
 // Bill
@@ -221,7 +214,7 @@ bool operator==(Date d1, Date d2)
 class Bill : public Date
 {
     public:
-    Bill(double sum, int yy, Month mm, int dd) : bill_sum{sum}, b_y{yy}, b_m{mm}, b_d{dd}
+    Bill(double sum, int yy, Month mm, int dd, bool C) : bill_sum{sum}, b_y{yy}, b_m{mm}, b_d{dd}, credit{C}
     {
         saved_day = dd;
         checkLastDay();
@@ -232,23 +225,35 @@ class Bill : public Date
     int bill_year() const { return b_y; }
     int get_saved_day() const { return saved_day; }
     double bill_me() const { return bill_sum; }
+    bool is_credit() { return credit; }
     
     void minus_year();
     void minus_month();
     void minus_day();
     void restore_month_and_add();
-    
+    void bringSundayForward();
+    bool was_sunday{false};
     
     private:
     // a bill can be 31 if there are 30
     int saved_day{0};
     double bill_sum{0.0};
+    bool credit{false}; // money in?
     int b_y{0};
     Month b_m{Month::Jan};
     int b_d{0};
     
+    tm bill_date{};
+    
     void checkLastDay();
+    // some chrono stuff
+    int testGetBillDayOfWeek();
+    void testMakeBillTM();
 };
+
+//
+// Bill operators
+//
 
 ostream& operator<<(ostream& os, const Bill&b)
 {
@@ -258,69 +263,70 @@ ostream& operator<<(ostream& os, const Bill&b)
         << ')';
 }
 
+bool operator==(Date date, Bill bill)
+{
+    return (date.day() == bill.bill_day()
+        && date.month() == bill.bill_month()
+        && date.year() == bill.bill_year());
+}
+
+
+// need sunday to move
+//int getBillDayOfWeek(const Bill date);
+
+void Bill::bringSundayForward()
+{
+    //if(getBillDayOfWeek(*this) == 0)
+    if(testGetBillDayOfWeek() == 0)
+    {
+        minus_day();    
+        was_sunday = true;
+    }    
+}
+
 void Bill::checkLastDay()
 {
-    // if the day is 31 we have three
+    // if the day is 31 we have four
     // tries to find 28, if not
     // we have an invalid date
-    int i = 3;
+    // if the date is 1st its valid
+    int i = 4;
     while(i-- > 0)
     {
         if(!is_valid(b_y, b_m, b_d))
         {
-            cout << "Invalid date! ";
             minus_day();
         }
         else
         {
-            cout << "Valid! ";
+            // if sunday?
+            bringSundayForward();
             return;
         }
     }
+    // valid but on sunday
     // couldnt find date
     throw Invalid{};
 }
 
+//Month addMonth(const Month& month);
+
 void Bill::restore_month_and_add()
 {
-    // date.day() date.month()
-    // the date will be on the
-    // bill date, so grab it then
-    // add_month stores m which is
-    // private
-    // if date.add_month then we
-    // miss lots of days
-    // add_month Dec to Jan and
-    // adds year, or checks Feb
-    // for 28 or 29
-    // bill needs to check all that
-    // too
+    was_sunday = false;
     
-    // 1. make m protected
-    // 2. copy add_month for Bill::add
-    // 3. copy add_month here and
-    // use saved_day
     if(b_m == Month::Dec)
 	   {
 		      b_m = Month::Jan;
 	       b_y++;
 	   }
-    // now leap year needs to be
-    // protected
-    // maybe i dont need this else if
-    // because saved day is set
-    /*
-    	else if(b_m == Month::Jan && b_d == 29 && !leapyear(y))
+    else
 	   {
-        		b_m = (Month)((int)b_m+1);
-		      b_d = 28;
-    	}
-    */
-    	else
-	   {
-	   	   b_m = (Month)((int)b_m+1);
+	       //b_m = (Month)((int)b_m+1);
+	       // safer way
+	       b_m = addMonth(b_m);
 	   }
-    // bill day = saved
+    
     b_d = get_saved_day();
     checkLastDay();
 }
@@ -328,11 +334,14 @@ void Bill::restore_month_and_add()
 void Bill::minus_day()
 {
     b_d--;
+    
     if(b_d < 1)
     {
         minus_month();
     }
 }
+
+Month minusMonth(const Month &month);
 
 void Bill::minus_month()
 {
@@ -344,7 +353,8 @@ void Bill::minus_month()
     }
     else
     {
-        b_m = (Month)((int)b_m-1);
+        //b_m = (Month)((int)b_m-1);
+        b_m = minusMonth(b_m);
         b_d = 31;
     }
     
@@ -356,18 +366,21 @@ void Bill::minus_year()
     b_y--;
     // checked in minus_month
 }
+// end of Bill
 
 
 //
 // time point
 //
 
+/*
 tm makeTM(
 const Date date)
 {
 	// must initialise with {} or it is garbage
 	tm get_tm{};
 	string sd;
+    
 	int d = date.day();
 	int m = (int)date.month();
 	int y = date.year();
@@ -384,16 +397,88 @@ const Date date)
 	
 	return get_tm;
 }
+*/
 
+/*
+ * we only want is sunday = 0
+ */
+/*
 int getDayOfWeek(const Date date)
 {
 	tm get_day = makeTM(date);
-	// we dont check if the return works
 
 	stringstream grab_number;
 	grab_number << put_time(&get_day, "%w");
 	string sday = grab_number.str();
 	int iday = stoi(sday);
+	
+	return iday;
+}
+*/
+
+//tm makeBillTM(
+//const Bill date)
+
+// Bill private tm?
+void Bill::testMakeBillTM()
+{
+	// must initialise with {} or it is garbage
+	//tm get_tm{};
+	string sd;
+    
+//	int d = date.bill_day();
+    
+    
+    int d = bill_day();
+    
+    
+	int m = (int)bill_month();
+	int y = bill_year();
+	
+	sd += to_string(y)+"-";
+	sd += to_string(m)+"-";
+	sd += to_string(d);
+	
+	istringstream ss{sd};
+//	ss >> get_time(&get_tm, "%y-%m-%d");
+    
+    
+    ss >> get_time(&bill_date, "%y-%m-%d");
+    
+    
+	// no check at the moment
+	// works with this
+    
+    
+//	mktime(&get_tm);
+    mktime(&bill_date);
+    
+    cout << " tm "<< asctime(&bill_date) << endl;
+	
+//	return get_tm;
+}
+
+//int getBillDayOfWeek(const Bill date)
+int Bill::testGetBillDayOfWeek()
+{
+//	tm get_day = makeBillTM(date);
+    testMakeBillTM();
+    
+    // use private tm?
+    //tm get_day = testMakeBillTM(*this);
+	// we dont check if the return works
+
+	stringstream grab_number;
+    
+    
+    //grab_number << put_time(&get_day, "%w");
+    grab_number << put_time(&bill_date, "%w");
+    
+    
+	string sday = grab_number.str();
+	int iday = stoi(sday);
+    
+    cout << " iday " << iday << endl;
 	
 	return iday;
 }
@@ -406,31 +491,48 @@ int getDayOfWeek(const Date date)
 	void printWeek(const Date date);
 
 
-// no, it wouldnt work
-//Bill Date::checkLastDayExist(Bill day)
-
+vector<Bill> makeBills(const Date& date)
+{
+    vector<Bill> temp;
+    int d = date.day();
+    Month m = date.month();
+    int y = date.year();
+    
+    int b_d = 0;
+    
+    b_d = 1;
+    Bill goodenergy {87.38, y, m, b_d, false};
+    
+    // plusnet
+    b_d = 12;
+    Bill plusnet {30.0, y, m, b_d, false};
+    
+    // seven trent
+    b_d = 16;
+    Bill seventrent {10.0, y, m, b_d, false};
+    
+    temp.push_back(goodenergy);
+    temp.push_back(plusnet);
+    temp.push_back(seventrent);
+    
+    
+    return temp;
+}
 
 
 /*
- * ps 31, so set all the bills
- * minus_day was for Sundays
- * date.add_day, then when a bill
- * comes out, add a month, but grab
- * saved_day
- * bills are unique, they move
- * around
- * date.add_month plus restore
- * saved_day
- */
+    Month addMonth();
+    int getBillDayOfWeek();
+    int getDayOfWeek();
+    tm makeBillTM();
+    vector<Bill> makeBills();
+    plus
+    int daysBetweenPay
+    int daysUntilSafe
 
-/*
- * bill does not need add_day
- * a bill is set (in stone pretty
- * much). a bill doesnt move
- * apart from sundays etc..
- * 
- * but yes the bill needs to move
- * to next month :-(
+5 (7) helper functions
+is there anything wrong?
+seems like date, bill and analyser
  */
 
 
@@ -445,40 +547,30 @@ int main(int argc, char *argv[])
     	time_t t2 = 0;
     
     // the date we update sum
+    // the bills
     std::ifstream ifs{"bank.txt"};
     double sum;
     ifs >> sum;
+    Date date{2025, Month::May, 1};
+    vector<Bill> bills = makeBills(date);
     
-    Date date{2025, Month::Apr, 7};
-    Bill plusnet {28.68, 2025, Month::Apr, 12};
-        
-    /*
-     * if i need, i bet a second
-     * try catch block would help
-     */
     try
     {
-        	std::cout << "Date created: " << date << std::endl;
-
+        std::cout << "Date created: " << date << std::endl;
         std::cout << "Available: " << sum << std::endl;
-        
-        std::cout << "Plus.net set on " << plusnet << endl;
     }
     catch(Date::Invalid)
     {
         cout << "Dates incorrect" << endl;
-    }    
-    catch(Bill::Invalid)
-    {
-        cout << "Bills incorrect" << endl;
     }
     
     //
     // start it going
     //    
+    
     try
     {
-        	int count = 10;
+        	int count = 30;
         	while(count>0)
         	{
         	   	chrono::time_point<chrono::system_clock> now{chrono::system_clock::now()};
@@ -487,14 +579,36 @@ int main(int argc, char *argv[])
         	    // every second
         	    if(t2>t)
         	   	{
-           	   		  t = t2;
-        	   	    plusnet.restore_month_and_add();
-                cout << plusnet << endl;
-                  cout << "Next plus.net is on " << plusnet << endl;
-	   		
-       	   	    count--;
+           	   		  //t = t2;
+        	   	    //date.add_day();
+        	   	    
+        	   	    //for(int i=0; i < bills.size(); ++i)
+        	   	    for(Bill &bill : bills)
+        	   	    {
+        	   	        if(date == bill)
+        	   	       {
+        	   	           // pay bill, move it to next month
+        	   	           cout << "found bill " << bill << endl;
+        	   	           sum -= bill.bill_me();
+        	   	           cout << "£" << sum << endl;
+        	   	           
+        	   	           bill.restore_month_and_add();
+        	   	       }
+        	   	    }
+        	   	    
+        	   	    // find the bill on the day
+        	   	    date.add_day();
+       	   	     count--;
         	   	}
         	}
+        
+        for(Bill bill : bills)
+        {
+            cout << bill.bill_me() << " is now on " << bill << endl;
+        }
+        //cout << "goodenergy is " << bills[0] << endl;
+        //cout << "plusnet is " << bills[1] << endl;
+        //cout << "seventrent is " << bills[2] << endl;
     }
     catch(Date::Invalid)
     {
@@ -506,12 +620,50 @@ int main(int argc, char *argv[])
     }
 	
     cout << "Finished." << endl;
-    	cout << "\n\n";
+    cout << "\n\n";
 	
 	return 0;
 }
 
+Month addMonth(const Month& m)
+{
+    switch(m)
+    {
+    case Month::Jan: return Month::Feb;
+    case Month::Feb: return Month::Mar;
+    case Month::Mar: return Month::Apr;
+    case Month::Apr: return Month::May;
+    case Month::May: return Month::Jun;
+    case Month::Jun: return Month::Jul;
+    case Month::Jul: return Month::Aug;
+    case Month::Aug: return Month::Sep;
+    case Month::Sep: return Month::Oct;
+    case Month::Oct: return Month::Nov;
+    case Month::Nov: return Month::Dec;
+    case Month::Dec: return Month::Jan;
+    }
+}
 
+Month minusMonth(const Month& m)
+{
+    switch(m)
+    {
+    case Month::Mar: return Month::Feb;
+    case Month::Apr: return Month::Mar;
+    case Month::May: return Month::Apr;
+    case Month::Jun: return Month::May;
+    case Month::Jul: return Month::Jun;
+    case Month::Aug: return Month::Jul;
+    case Month::Sep: return Month::Aug;
+    case Month::Oct: return Month::Sep;
+    case Month::Nov: return Month::Oct;
+    case Month::Dec: return Month::Nov;
+    case Month::Jan: return Month::Dec;
+    case Month::Feb: return Month::Jan;
+    }
+}
+
+/*
 string printMonth(const Date& d)
 {
 	switch(d.month())
@@ -616,3 +768,4 @@ void printWeek(const Date date)
 		cout << setw(3)<< setfill('X') << "X" << "|";
 	}
 }
+*/
